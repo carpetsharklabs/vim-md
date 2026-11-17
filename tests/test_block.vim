@@ -159,3 +159,13 @@ function! Test_code_syntax_unknown_lang_and_disabled() abort
   unlet g:vim_md_code_syntax
   call assert_equal([], filter(copy(r.hl), 'v:val[3] =~# "^VimMdX_CodeBlock_" && v:val[3] !~# "CodeLang"'))
 endfunction
+
+function! Test_code_syntax_never_uses_normal_group() abort
+  " 'Normal' carries its own background and would punch a hole in the code block.
+  " The fixture syntax links one token to Normal and another to Statement.
+  execute 'set rtp+=' . fnameescape(s:root . '/tests/fixtures')
+  let spans = vim_md#syntax#spans(['def plain def'], 'vimmdtest')
+  call assert_equal([[[0, 3, 'Statement'], [10, 3, 'Statement']]], spans)
+  let r = s:r(['```vimmdtest', 'def plain def', '```'], 30)
+  call assert_equal([], filter(copy(r.hl), 'v:val[3] =~# "Normal"'))
+endfunction

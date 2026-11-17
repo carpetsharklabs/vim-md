@@ -49,6 +49,10 @@ function! vim_md#syntax#collect() abort
         let id = synID(lnum, c, 1)
         if id
           let g = synIDattr(synIDtrans(id), 'name')
+          " Normal has its own background, which would punch a hole in the code block.
+          if g ==# 'Normal'
+            let g = ''
+          endif
         endif
       endif
       if g !=# cur
