@@ -143,8 +143,9 @@ function! Test_code_block_syntax_highlight() abort
   let at_def = filter(copy(r.hl), 'v:val[0] == 2 && v:val[1] == 2')
   call assert_equal(1, len(at_def))
   call assert_match('^VimMdX_CodeBlock_', at_def[0][3])
-  " A string literal and a comment get distinct groups (String links to Constant).
-  let strs = filter(copy(r.hl), 'v:val[0] == 3 && v:val[3] =~# "_Constant$"')
+  " A string literal and a comment get distinct groups. The string group is
+  " Constant in Vim (String links to it) but String itself in Neovim.
+  let strs = filter(copy(r.hl), 'v:val[0] == 3 && v:val[3] =~# "_\\(Constant\\|String\\)$"')
   let cmts = filter(copy(r.hl), 'v:val[0] == 3 && v:val[3] =~# "_Comment$"')
   call assert_equal(1, len(strs))
   call assert_equal(1, len(cmts))
