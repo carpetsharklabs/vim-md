@@ -68,7 +68,7 @@ function! Test_view_in_same_window() abort
   call assert_equal(3, line('.'), 'cursor mapped back to the source')
   call assert_equal(1, &wrap)
   call assert_equal(1, &number)
-  call assert_equal(0, &foldcolumn)
+  call assert_equal(0, str2nr(&foldcolumn))   " string in Neovim, number in Vim
   call assert_equal(0, &cursorline)
   call assert_equal(['# Title', '', 'some **bold** text', '', '## Two', '', 'tail para'], getline(1, '$'))
   call assert_equal(1, &modified, 'source stays modified, untouched')
