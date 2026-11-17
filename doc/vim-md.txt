@@ -1,0 +1,37 @@
+*vim-md.txt*  Rendered markdown preview inside Vim / Neovim
+
+COMMANDS                                                         *vim-md-commands*
+
+:MdPreview            Toggle the preview window.
+:MdPreviewOpen        Open the preview for the current buffer.
+:MdPreviewClose       Close the preview.
+:MdPreviewRefresh     Re-render now.
+
+<Plug>(vim-md-toggle) Mapping for :MdPreview.
+
+PREVIEW WINDOW MAPPINGS                                          *vim-md-mappings*
+
+q            close the preview
+<CR>, gx     follow the link under the cursor
+]] / [[      next / previous heading
+
+OPTIONS                                                           *vim-md-options*
+
+g:vim_md_position      'right' (default), 'left', 'above', 'below'
+g:vim_md_size          columns (or lines); 0 = half of the current window
+g:vim_md_debounce      milliseconds to wait before re-rendering (120)
+g:vim_md_follow        follow the markdown buffer you enter (1)
+g:vim_md_filetypes     filetypes treated as markdown (['markdown'])
+g:vim_md_show_urls     show "(url)" after link text (0)
+g:vim_md_heading_icons list of 6 prefixes, one per heading level
+
+HIGHLIGHT GROUPS                                                *vim-md-highlight*
+
+VimMdH1..VimMdH6 VimMdBold VimMdItalic VimMdStrike VimMdCode VimMdCodeBlock
+VimMdCodeLang VimMdLink VimMdUrl VimMdImage VimMdQuote VimMdBullet VimMdCheck
+VimMdChecked VimMdRule VimMdTableBorder VimMdNote VimMdTip VimMdImportant
+VimMdWarning VimMdCaution
+
+All are defined with ":highlight default", so your own definitions win.
+
+ vim:tw=78:ft=help:norl:

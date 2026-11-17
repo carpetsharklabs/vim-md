@@ -1,0 +1,30 @@
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        editor: [vim, neovim]
+        version: [stable, nightly]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: ${{ matrix.editor == 'neovim' }}
+          version: ${{ matrix.version }}
+      - name: Run tests
+        env:
+          VIM_MD_TEST_OUT: ${{ runner.temp }}/results.txt
+        run: |
+          if [ "${{ matrix.editor }}" = neovim ]; then
+            nvim -u NONE -es -S tests/run.vim || rc=$?
+          else
+            vim -u NONE -N -es --cmd 'set enc=utf-8' -S tests/run.vim || rc=$?
+          fi
+          cat "$VIM_MD_TEST_OUT"
+          exit ${rc:-0}
