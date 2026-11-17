@@ -394,13 +394,13 @@ function! vim_md#follow() abort
   let col = col('.')
   for lk in get(st.res, 'links', [])
     if lk[0] == lnum && col >= lk[1] && col < lk[1] + lk[2]
-      return s:open_url(lk[3], st)
+      return s:open_url(lk[3], st, strpart(getline(lnum), lk[1] - 1, lk[2]))
     endif
   endfor
   echo 'vim-md: no link under cursor'
 endfunction
 
-function! s:open_url(url, st) abort
+function! s:open_url(url, st, text) abort
   if a:url =~# '^#'
     let want = strpart(a:url, 1)
     for h in a:st.res.headings
@@ -411,9 +411,13 @@ function! s:open_url(url, st) abort
     endfor
     echo 'vim-md: heading not found: ' . want
   elseif a:url =~# '^\a[a-zA-Z0-9+.-]*:'
-    call s:open_external(a:url)
+    call s:open_external(a:url, a:text)
   else
     let path = substitute(a:url, '#.*$', '', '')
+    if path =~# '[[:cntrl:]]'
+      echohl WarningMsg | echo 'vim-md: refusing to open a path with control characters' | echohl None
+      return
+    endif
     let dir = fnamemodify(bufname(a:st.src), ':p:h')
     let full = path =~# '^/' ? path : dir . '/' . path
     if a:st is s:view
@@ -428,14 +432,26 @@ function! s:open_url(url, st) abort
   endif
 endfunction
 
-function! s:open_external(url) abort
-  if has('mac')
-    let cmd = ['open', a:url]
-  elseif has('win32')
-    let cmd = ['cmd', '/c', 'start', '', a:url]
-  else
-    let cmd = ['xdg-open', a:url]
+function! s:open_external(url, text) abort
+  let cmd = vim_md#url#command(a:url)
+  if empty(cmd)
+    let shown = strchars(a:url) > 60 ? strcharpart(a:url, 0, 60) . '...' : a:url
+    echohl WarningMsg
+    echo 'vim-md: refusing to open "' . substitute(shown, '[[:cntrl:]]', '?', 'g')
+          \ . '" (scheme not in g:vim_md_open_schemes)'
+    echohl None
+    return
   endif
+  let target = cmd[-1]
+  " A link text such as "https://bank.example" that points elsewhere is the
+  " classic phishing trick: always ask before following it.
+  if vim_md#url#spoofed(a:text, a:url) || s:opt('confirm_external', 0)
+    let msg = 'vim-md: open this link?' . "\n" . 'text:   ' . a:text . "\n" . 'target: ' . target
+    if confirm(msg, "&Open\n&Cancel", 2) != 1
+      return
+    endif
+  endif
+  echo 'vim-md: opening ' . target
   if has('nvim')
     call jobstart(cmd, {'detach': 1})
   else

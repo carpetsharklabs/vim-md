@@ -33,6 +33,10 @@ g:vim_md_filetypes     filetypes treated as markdown (['markdown'])
 g:vim_md_show_urls     show "(url)" after link text (0)
 g:vim_md_code_syntax   highlight fenced code blocks with Vim's syntax files (1);
                        needs |:syntax| on, skipped for unknown languages
+g:vim_md_open_schemes  URL schemes <CR> may open with the system opener
+                       (['http', 'https', 'mailto']); everything else is refused
+g:vim_md_confirm_external ask before opening any external link (0). Links whose
+                       text is a URL for a different host always ask.
 g:vim_md_heading_icons list of 6 prefixes, one per heading level
 
 HIGHLIGHT GROUPS                                                *vim-md-highlight*

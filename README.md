@@ -65,6 +65,8 @@ let g:vim_md_follow = 1           " preview follows the markdown buffer you ente
 let g:vim_md_filetypes = ['markdown']
 let g:vim_md_show_urls = 0        " append (url) after link text
 let g:vim_md_code_syntax = 1      " syntax-highlight fenced code blocks
+let g:vim_md_open_schemes = ['http', 'https', 'mailto']   " what <CR> may open externally
+let g:vim_md_confirm_external = 0 " 1 = always ask before opening an external link
 let g:vim_md_heading_icons = ['', '', '▌ ', '▸ ', '· ', '· ']
 ```
 
@@ -74,6 +76,19 @@ Colors are `VimMd*` highlight groups, linked to standard groups by default
 with `highlight VimMdH1 guifg=...` (e.g. `highlight VimMdCodeBlock guibg=#1e1e2e`).
 Code blocks use Vim's own syntax files for the fence language (` ```python `), so
 they need `syntax on` and follow your colorscheme. See `:help vim-md`.
+
+## Security
+
+A previewed document can be untrusted, so following a link is deliberately strict:
+
+* only `g:vim_md_open_schemes` (`http`, `https`, `mailto`) are handed to the system
+  opener; `file:`, `javascript:`, `smb:`, custom protocol handlers and Windows paths
+  such as `C:\...` are refused
+* the URL is percent-encoded first (quotes, `<>\^|`, spaces, control characters,
+  non-ASCII), and Windows uses `rundll32` instead of `cmd /c start`
+* a link whose text is a URL for another host
+  (`[https://bank.example](https://evil.example)`) always asks for confirmation
+* relative paths open in Vim (never executed); paths with control characters are refused
 
 ## Not supported (yet)
 

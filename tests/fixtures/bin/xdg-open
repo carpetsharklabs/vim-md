@@ -1,0 +1,3 @@
+#!/bin/sh
+# Test double for xdg-open: records the URL it was asked to open.
+printf "%s\n" "$1" >> "$VIMMD_LOG"
