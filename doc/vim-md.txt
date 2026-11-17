@@ -7,7 +7,15 @@ COMMANDS                                                         *vim-md-command
 :MdPreviewClose       Close the preview.
 :MdPreviewRefresh     Re-render now.
 
+:MdView               Toggle rendering in the current window. The source is
+                      hidden (not closed or modified), the cursor line is
+                      mapped both ways and window options are restored when
+                      you leave. Press q to go back.
+:MdViewOpen           Enter the view.
+:MdViewClose          Leave the view.
+
 <Plug>(vim-md-toggle) Mapping for :MdPreview.
+<Plug>(vim-md-view)   Mapping for :MdView.
 
 PREVIEW WINDOW MAPPINGS                                          *vim-md-mappings*
 
@@ -23,6 +31,8 @@ g:vim_md_debounce      milliseconds to wait before re-rendering (120)
 g:vim_md_follow        follow the markdown buffer you enter (1)
 g:vim_md_filetypes     filetypes treated as markdown (['markdown'])
 g:vim_md_show_urls     show "(url)" after link text (0)
+g:vim_md_code_syntax   highlight fenced code blocks with Vim's syntax files (1);
+                       needs |:syntax| on, skipped for unknown languages
 g:vim_md_heading_icons list of 6 prefixes, one per heading level
 
 HIGHLIGHT GROUPS                                                *vim-md-highlight*

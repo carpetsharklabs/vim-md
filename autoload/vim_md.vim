@@ -1,9 +1,18 @@
-" vim-md: rendered markdown preview inside Vim / Neovim.
+" vim-md: rendered markdown inside Vim / Neovim.
 "
-" One preview window follows the markdown buffer you are editing: it re-renders
-" (debounced) whenever the text changes and scrolls to match the cursor.
+" Two modes:
+"   preview  a split that follows the markdown buffer you are editing: it
+"            re-renders (debounced) on every change and scrolls with the cursor.
+"   view     the rendered document replaces the source in the *current* window
+"            (read-only); toggling back restores the source, its cursor line and
+"            the window options.
 
 let s:state = {'buf': -1, 'src': -1, 'timer': -1, 'res': {}, 'width': 0, 'sync_idx': -1}
+let s:view = {}
+
+" Window-local options we override and restore in view mode.
+let s:win_opts = ['wrap', 'number', 'relativenumber', 'list', 'spell', 'foldenable',
+      \ 'signcolumn', 'foldcolumn', 'colorcolumn', 'cursorline']
 
 function! s:opt(name, default) abort
   return get(g:, 'vim_md_' . a:name, a:default)
@@ -20,7 +29,86 @@ function! s:preview_win() abort
   return bufwinid(s:state.buf)
 endfunction
 
-" ---------------------------------------------------------------- public API
+function! s:check() abort
+  if !has('nvim') && !(has('textprop') && has('timers') && v:version >= 802)
+    echohl ErrorMsg | echom 'vim-md: needs Vim 8.2+ with +textprop (or Neovim)' | echohl None
+    return 0
+  endif
+  if !has('nvim') && &encoding !=# 'utf-8'
+    echohl ErrorMsg | echom 'vim-md: requires ''encoding'' to be utf-8' | echohl None
+    return 0
+  endif
+  return 1
+endfunction
+
+" ---------------------------------------------------------------- shared helpers
+
+" The state (preview or view) whose buffer is current; used by navigation.
+function! s:ctx() abort
+  if !empty(s:view) && bufnr('%') == s:view.buf
+    return s:view
+  endif
+  return s:state
+endfunction
+
+function! s:render_buf(src, width) abort
+  return vim_md#block#render(getbufline(a:src, 1, '$'), max([a:width, 20]), 1)
+endfunction
+
+" Replace the contents (text + highlights) of the read-only render buffer.
+function! s:fill(buf, res) abort
+  call setbufvar(a:buf, '&modifiable', 1)
+  call setbufline(a:buf, 1, empty(a:res.lines) ? [''] : a:res.lines)
+  let total = getbufinfo(a:buf)[0].linecount
+  if total > len(a:res.lines) && total > 1
+    silent! call deletebufline(a:buf, max([len(a:res.lines), 1]) + 1, '$')
+  endif
+  call vim_md#hl#apply(a:buf, a:res.hl)
+  call setbufvar(a:buf, '&modifiable', 0)
+endfunction
+
+" Rendered line index that corresponds to source line `ln`.
+function! s:map_idx(res, ln) abort
+  let idx = 1
+  let k = 0
+  for v in a:res.src
+    let k += 1
+    if v > a:ln
+      break
+    endif
+    let idx = k
+  endfor
+  return idx
+endfunction
+
+" Put cursor on rendered line `idx`, roughly centered.
+function! s:place(win, res, idx) abort
+  let h = winheight(a:win)
+  let total = len(a:res.src)
+  let top = min([max([1, a:idx - h / 2]), max([1, total - h + 1])])
+  call win_execute(a:win, 'call winrestview({"lnum": ' . a:idx . ', "topline": ' . top . ', "col": 0})')
+endfunction
+
+" Options for the current window (the render window).
+function! s:setup_win() abort
+  setlocal nowrap nonumber norelativenumber nolist nospell nofoldenable
+  setlocal signcolumn=no foldcolumn=0 colorcolumn= cursorline
+endfunction
+
+function! s:setup_buf(name, ft) abort
+  setlocal buftype=nofile bufhidden=wipe noswapfile nobuflisted undolevels=-1 nomodifiable
+  try
+    execute 'silent keepalt file' fnameescape(a:name)
+  catch
+  endtry
+  execute 'setlocal filetype=' . a:ft
+  nnoremap <buffer><silent> <CR> :<C-u>call vim_md#follow()<CR>
+  nnoremap <buffer><silent> gx :<C-u>call vim_md#follow()<CR>
+  nnoremap <buffer><silent> ]] :<C-u>call vim_md#heading(1)<CR>
+  nnoremap <buffer><silent> [[ :<C-u>call vim_md#heading(-1)<CR>
+endfunction
+
+" ---------------------------------------------------------------- preview (split)
 
 function! vim_md#is_open() abort
   return s:preview_win() > 0
@@ -35,16 +123,11 @@ function! vim_md#toggle() abort
 endfunction
 
 function! vim_md#open() abort
-  if !has('nvim') && !(has('textprop') && has('timers') && v:version >= 802)
-    echohl ErrorMsg | echom 'vim-md: needs Vim 8.2+ with +textprop (or Neovim)' | echohl None
-    return
-  endif
-  if !has('nvim') && &encoding !=# 'utf-8'
-    echohl ErrorMsg | echom 'vim-md: requires ''encoding'' to be utf-8' | echohl None
+  if !s:check()
     return
   endif
   let cur = bufnr('%')
-  if cur == s:state.buf
+  if cur == s:state.buf || (!empty(s:view) && cur == s:view.buf)
     return
   endif
   if s:state.buf >= 0 && !bufexists(s:state.buf)
@@ -67,15 +150,15 @@ function! vim_md#close() abort
   call s:stop_timer()
   let s:state.buf = -1
   let s:state.res = {}
-  silent! autocmd! VimMd
+  if empty(s:view)
+    silent! autocmd! VimMd
+  endif
 endfunction
 
 function! vim_md#refresh() abort
   call s:render_now()
   call s:sync(1)
 endfunction
-
-" ---------------------------------------------------------------- window
 
 function! s:create_window() abort
   let cur = win_getid()
@@ -87,44 +170,22 @@ function! s:create_window() abort
     let cmd = (pos ==# 'above' ? 'leftabove' : 'rightbelow') . ' ' . (size ? size : winheight(0) / 2) . 'new'
   endif
   execute 'silent keepalt' cmd
-  setlocal buftype=nofile bufhidden=wipe noswapfile nobuflisted undolevels=-1
-  setlocal nowrap nonumber norelativenumber nolist nospell nofoldenable
-  setlocal signcolumn=no foldcolumn=1 colorcolumn= cursorline winfixwidth
-  setlocal nomodifiable
-  setlocal statusline=\ Markdown\ preview
-  try
-    silent keepalt file [Markdown\ Preview]
-  catch
-  endtry
-  setlocal filetype=vim_md_preview
+  call s:setup_win()
+  setlocal winfixwidth statusline=\ Markdown\ preview
+  call s:setup_buf('[Markdown Preview]', 'vim_md_preview')
   let s:state.buf = bufnr('%')
   nnoremap <buffer><silent> q :<C-u>call vim_md#close()<CR>
-  nnoremap <buffer><silent> <CR> :<C-u>call vim_md#follow()<CR>
-  nnoremap <buffer><silent> gx :<C-u>call vim_md#follow()<CR>
-  nnoremap <buffer><silent> ]] :<C-u>call vim_md#heading(1)<CR>
-  nnoremap <buffer><silent> [[ :<C-u>call vim_md#heading(-1)<CR>
   call win_gotoid(cur)
 endfunction
-
-" ---------------------------------------------------------------- rendering
 
 function! s:render_now() abort
   let win = s:preview_win()
   if win < 0 || s:state.src < 0 || !bufloaded(s:state.src)
     return
   endif
-  let width = max([winwidth(win) - 2, 20])
   let s:state.width = winwidth(win)
-  let res = vim_md#block#render(getbufline(s:state.src, 1, '$'), width)
-  let b = s:state.buf
-  call setbufvar(b, '&modifiable', 1)
-  call setbufline(b, 1, empty(res.lines) ? [''] : res.lines)
-  let total = getbufinfo(b)[0].linecount
-  if total > len(res.lines) && total > 1
-    silent! call deletebufline(b, max([len(res.lines), 1]) + 1, '$')
-  endif
-  call vim_md#hl#apply(b, res.hl)
-  call setbufvar(b, '&modifiable', 0)
+  let res = s:render_buf(s:state.src, winwidth(win) - 2)
+  call s:fill(s:state.buf, res)
   let s:state.res = res
 endfunction
 
@@ -150,37 +211,114 @@ function! s:on_timer(id) abort
   endtry
 endfunction
 
-" ---------------------------------------------------------------- scroll sync
-
 function! s:sync(force) abort
   let win = s:preview_win()
   if win < 0 || empty(s:state.res) || bufnr('%') != s:state.src
     return
   endif
-  let map = s:state.res.src
-  let ln = line('.')
-  let idx = 1
-  let k = 0
-  for v in map
-    let k += 1
-    if v > ln
-      break
-    endif
-    let idx = k
-  endfor
+  let idx = s:map_idx(s:state.res, line('.'))
   if !a:force && idx == s:state.sync_idx
     return
   endif
   let s:state.sync_idx = idx
-  let h = winheight(win)
-  let total = len(map)
-  let top = min([max([1, idx - h / 2]), max([1, total - h + 1])])
-  call win_execute(win, 'call winrestview({"lnum": ' . idx . ', "topline": ' . top . ', "col": 0})')
+  call s:place(win, s:state.res, idx)
+endfunction
+
+" ---------------------------------------------------------------- view (same window)
+
+function! vim_md#view_is_open() abort
+  return !empty(s:view) && bufexists(s:view.buf) && bufnr('%') == s:view.buf
+endfunction
+
+function! vim_md#view_toggle() abort
+  if vim_md#view_is_open()
+    call vim_md#view_close()
+  else
+    call vim_md#view_open()
+  endif
+endfunction
+
+function! vim_md#view_open() abort
+  if !s:check()
+    return
+  endif
+  let cur = bufnr('%')
+  if vim_md#view_is_open() || cur == s:state.buf
+    return
+  endif
+  call vim_md#hl#setup()
+  call s:augroup()
+  let win = win_getid()
+  let ln = line('.')
+  let saved = {}
+  for o in s:win_opts
+    let saved[o] = getwinvar(win, '&' . o)
+  endfor
+  let res = s:render_buf(cur, winwidth(0) - 2)
+  " 'hide' keeps a modified source buffer loaded; 'keepalt' leaves # untouched.
+  silent keepalt hide enew
+  call s:setup_win()
+  call s:setup_buf('[Markdown View]', 'vim_md_view')
+  nnoremap <buffer><silent> q :<C-u>call vim_md#view_close()<CR>
+  let s:view = {'buf': bufnr('%'), 'src': cur, 'win': win, 'res': res, 'saved': saved, 'width': winwidth(0)}
+  autocmd VimMd BufWinLeave <buffer> call s:view_leave()
+  autocmd VimMd BufWipeout <buffer> call s:view_gone()
+  call s:fill(s:view.buf, res)
+  call s:place(win, res, s:map_idx(res, ln))
+endfunction
+
+function! vim_md#view_close() abort
+  if !vim_md#view_is_open()
+    return
+  endif
+  let v = s:view
+  let sl = get(v.res.src, line('.') - 1, 1)
+  if bufexists(v.src)
+    execute 'silent keepalt hide buffer' v.src
+  else
+    silent keepalt hide enew
+  endif
+  call cursor(sl, 1)
+  normal! zz
+endfunction
+
+" Restore the window options when the view buffer leaves its window (also covers
+" `:e other` or `:q` inside the view).
+function! s:view_leave() abort
+  if empty(s:view)
+    return
+  endif
+  for [o, val] in items(s:view.saved)
+    silent! call setwinvar(s:view.win, '&' . o, val)
+  endfor
+endfunction
+
+function! s:view_gone() abort
+  let s:view = {}
+  if s:state.buf < 0
+    silent! autocmd! VimMd
+  endif
+endfunction
+
+function! s:view_rerender() abort
+  if !vim_md#view_is_open() || !bufexists(s:view.src) || winwidth(0) == s:view.width
+    return
+  endif
+  let sl = get(s:view.res.src, line('.') - 1, 1)
+  let res = s:render_buf(s:view.src, winwidth(0) - 2)
+  let s:view.res = res
+  let s:view.width = winwidth(0)
+  call s:fill(s:view.buf, res)
+  call s:place(win_getid(), res, s:map_idx(res, sl))
 endfunction
 
 " ---------------------------------------------------------------- autocmds
 
 function! s:augroup() abort
+  " Idempotent: re-running `autocmd!` would also drop the view's buffer-local ones.
+  if exists('#VimMd#BufEnter')
+    return
+  endif
   augroup VimMd
     autocmd!
     autocmd TextChanged,TextChangedI,TextChangedP,InsertLeave,BufWritePost * call s:on_change()
@@ -223,6 +361,7 @@ function! s:on_resize() abort
   if win > 0 && winwidth(win) != s:state.width
     call s:schedule()
   endif
+  call s:view_rerender()
 endfunction
 
 " ---------------------------------------------------------------- navigation
@@ -230,7 +369,7 @@ endfunction
 function! vim_md#heading(dir) abort
   let cur = line('.')
   let target = -1
-  for h in get(s:state.res, 'headings', [])
+  for h in get(s:ctx().res, 'headings', [])
     if a:dir > 0 && h[0] > cur
       let target = h[0]
       break
@@ -250,20 +389,21 @@ function! s:slug(text) abort
 endfunction
 
 function! vim_md#follow() abort
+  let st = s:ctx()
   let lnum = line('.')
   let col = col('.')
-  for lk in get(s:state.res, 'links', [])
+  for lk in get(st.res, 'links', [])
     if lk[0] == lnum && col >= lk[1] && col < lk[1] + lk[2]
-      return s:open_url(lk[3])
+      return s:open_url(lk[3], st)
     endif
   endfor
   echo 'vim-md: no link under cursor'
 endfunction
 
-function! s:open_url(url) abort
+function! s:open_url(url, st) abort
   if a:url =~# '^#'
     let want = strpart(a:url, 1)
-    for h in s:state.res.headings
+    for h in a:st.res.headings
       if s:slug(h[2]) ==# want
         call cursor(h[0], 1)
         return
@@ -274,11 +414,15 @@ function! s:open_url(url) abort
     call s:open_external(a:url)
   else
     let path = substitute(a:url, '#.*$', '', '')
-    let dir = fnamemodify(bufname(s:state.src), ':p:h')
+    let dir = fnamemodify(bufname(a:st.src), ':p:h')
     let full = path =~# '^/' ? path : dir . '/' . path
-    let w = bufwinid(s:state.src)
-    if w > 0
-      call win_gotoid(w)
+    if a:st is s:view
+      call vim_md#view_close()
+    else
+      let w = bufwinid(a:st.src)
+      if w > 0
+        call win_gotoid(w)
+      endif
     endif
     execute 'edit' fnameescape(full)
   endif
