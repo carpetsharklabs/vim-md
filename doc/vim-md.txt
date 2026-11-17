@@ -23,6 +23,8 @@ g:vim_md_debounce      milliseconds to wait before re-rendering (120)
 g:vim_md_follow        follow the markdown buffer you enter (1)
 g:vim_md_filetypes     filetypes treated as markdown (['markdown'])
 g:vim_md_show_urls     show "(url)" after link text (0)
+g:vim_md_code_syntax   highlight fenced code blocks with Vim's syntax files (1);
+                       needs |:syntax| on, skipped for unknown languages
 g:vim_md_heading_icons list of 6 prefixes, one per heading level
 
 HIGHLIGHT GROUPS                                                *vim-md-highlight*

@@ -133,3 +133,28 @@ function! Test_demo_renders_without_error() abort
   let r = s:r(readfile(s:root . '/examples/demo.md'), 60)
   call assert_true(len(r.lines) > 30)
 endfunction
+
+function! Test_code_block_syntax_highlight() abort
+  let r = s:r(['```python', 'def f():', '    return "x"  # hi', '```'], 40)
+  " Highlight combos merge the code background with the syntax group colors.
+  let names = map(copy(r.hl), 'v:val[3]')
+  call assert_true(len(filter(copy(names), 'v:val =~# "^VimMdX_CodeBlock_"')) > 0, string(names))
+  " The "def" keyword (line 2, col 2) is highlighted differently from the background.
+  let at_def = filter(copy(r.hl), 'v:val[0] == 2 && v:val[1] == 2')
+  call assert_equal(1, len(at_def))
+  call assert_match('^VimMdX_CodeBlock_', at_def[0][3])
+  " A string literal and a comment get distinct groups (String links to Constant).
+  let strs = filter(copy(r.hl), 'v:val[0] == 3 && v:val[3] =~# "_Constant$"')
+  let cmts = filter(copy(r.hl), 'v:val[0] == 3 && v:val[3] =~# "_Comment$"')
+  call assert_equal(1, len(strs))
+  call assert_equal(1, len(cmts))
+endfunction
+
+function! Test_code_syntax_unknown_lang_and_disabled() abort
+  let r = s:r(['```nosuchlang', 'x = 1', '```'], 20)
+  call assert_equal([], filter(copy(r.hl), 'v:val[3] =~# "^VimMdX_CodeBlock_" && v:val[3] !~# "CodeLang"'))
+  let g:vim_md_code_syntax = 0
+  let r = s:r(['```python', 'def f(): pass', '```'], 20)
+  unlet g:vim_md_code_syntax
+  call assert_equal([], filter(copy(r.hl), 'v:val[3] =~# "^VimMdX_CodeBlock_" && v:val[3] !~# "CodeLang"'))
+endfunction

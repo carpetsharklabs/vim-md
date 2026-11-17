@@ -224,22 +224,30 @@ endfunction
 
 " ---------------------------------------------------------------- renderers
 
-function! s:render_code(content, lang, width) abort
+function! s:render_code(content, label, width, ft) abort
   let maxw = 0
   for l in a:content
     let maxw = max([maxw, strdisplaywidth(l)])
   endfor
   let w = max([a:width, maxw + 2])
+  let hl = vim_md#syntax#spans(a:content, a:ft)
   let out = []
-  let head = ' ' . a:lang
-  let hl = s:line(head . repeat(' ', w - strdisplaywidth(head)), [[0, w, 'VimMdCodeBlock']])
-  if a:lang !=# ''
-    call add(hl.sp, [1, strlen(a:lang), 'VimMdCodeLang'])
+  let head = ' ' . a:label
+  let h = s:line(head . repeat(' ', w - strdisplaywidth(head)), [[0, w, 'VimMdCodeBlock']])
+  if a:label !=# ''
+    call add(h.sp, [1, strlen(a:label), 'VimMdCodeLang'])
   endif
-  call add(out, hl)
-  for l in a:content
-    let t = ' ' . l
-    call add(out, s:line(t . repeat(' ', w - strdisplaywidth(t)), [[0, strlen(t) + w - strdisplaywidth(t), 'VimMdCodeBlock']]))
+  call add(out, h)
+  for k in range(len(a:content))
+    let t = ' ' . a:content[k]
+    let pad = w - strdisplaywidth(t)
+    let l = s:line(t . repeat(' ', pad), [[0, strlen(t) + pad, 'VimMdCodeBlock']])
+    if k < len(hl)
+      for sp in hl[k]
+        call add(l.sp, [sp[0] + 1, sp[1], sp[2]])
+      endfor
+    endif
+    call add(out, l)
   endfor
   call add(out, s:line(repeat(' ', w), [[0, w, 'VimMdCodeBlock']]))
   return out
@@ -513,7 +521,7 @@ function! s:blocks(lines, nums, width, ctx) abort
         let j += 1
       endwhile
       if j < n
-        let blk = s:render_code(a:lines[1 : j - 1], 'front matter', width)
+        let blk = s:render_code(a:lines[1 : j - 1], 'front matter', width, 'yaml')
         let kind = 'code'
         let i = j + 1
       endif
@@ -531,7 +539,7 @@ function! s:blocks(lines, nums, width, ctx) abort
         call add(content, substitute(a:lines[j], '^\s\{0,' . ind . '}', '', ''))
         let j += 1
       endwhile
-      let blk = s:render_code(content, lang, width)
+      let blk = s:render_code(content, lang, width, lang)
       let kind = 'code'
       let i = j + 1
 
@@ -592,7 +600,7 @@ function! s:blocks(lines, nums, width, ctx) abort
         call remove(content, -1)
         let j -= 1
       endwhile
-      let blk = s:render_code(content, '', width)
+      let blk = s:render_code(content, '', width, '')
       let kind = 'code'
       let i = j
 

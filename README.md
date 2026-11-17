@@ -5,7 +5,7 @@ tools. Pure Vimscript.
 
 `:MdPreview` opens a split with the document already rendered: headings,
 emphasis, lists, task lists, block quotes, GitHub alerts, tables (box
-drawing), code blocks, links and images — without the `#`, `**`, `` ` `` noise.
+drawing), syntax-highlighted code blocks, links and images — without the `#`, `**`, `` ` `` noise.
 The preview updates while you type and follows your cursor.
 
 ```
@@ -55,17 +55,20 @@ let g:vim_md_debounce = 120       " ms to wait after typing before re-render
 let g:vim_md_follow = 1           " preview follows the markdown buffer you enter
 let g:vim_md_filetypes = ['markdown']
 let g:vim_md_show_urls = 0        " append (url) after link text
+let g:vim_md_code_syntax = 1      " syntax-highlight fenced code blocks
 let g:vim_md_heading_icons = ['', '', '▌ ', '▸ ', '· ', '· ']
 ```
 
 Colors are `VimMd*` highlight groups, linked to standard groups by default
 (`VimMdH1`..`VimMdH6`, `VimMdCode`, `VimMdCodeBlock`, `VimMdLink`, `VimMdQuote`,
 `VimMdBullet`, `VimMdTableBorder`, …) so they follow your colorscheme. Override
-with `highlight VimMdH1 guifg=...`. See `:help vim-md`.
+with `highlight VimMdH1 guifg=...` (e.g. `highlight VimMdCodeBlock guibg=#1e1e2e`).
+Code blocks use Vim's own syntax files for the fence language (` ```python `), so
+they need `syntax on` and follow your colorscheme. See `:help vim-md`.
 
 ## Not supported (yet)
 
-Syntax highlighting inside code blocks, footnotes, inline HTML beyond a few
+Footnotes, inline HTML beyond a few
 common tags, images as pixels.
 
 ## Development
