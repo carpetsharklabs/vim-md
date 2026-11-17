@@ -52,7 +52,7 @@ function! s:ctx() abort
 endfunction
 
 function! s:render_buf(src, width) abort
-  return vim_md#block#render(getbufline(a:src, 1, '$'), max([a:width, 20]))
+  return vim_md#block#render(getbufline(a:src, 1, '$'), max([a:width, 20]), 1)
 endfunction
 
 " Replace the contents (text + highlights) of the read-only render buffer.
@@ -92,7 +92,7 @@ endfunction
 " Options for the current window (the render window).
 function! s:setup_win() abort
   setlocal nowrap nonumber norelativenumber nolist nospell nofoldenable
-  setlocal signcolumn=no foldcolumn=1 colorcolumn= cursorline
+  setlocal signcolumn=no foldcolumn=0 colorcolumn= cursorline
 endfunction
 
 function! s:setup_buf(name, ft) abort

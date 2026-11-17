@@ -20,26 +20,30 @@ let s:alerts = {
       \ 'CAUTION': ['VimMdCaution', '✖ '],
       \ }
 
-function! vim_md#block#render(lines, width) abort
+" Optional third argument: left margin in columns (default 0), added as plain
+" spaces so it looks the same in every colorscheme.
+function! vim_md#block#render(lines, width, ...) abort
   let lines = map(copy(a:lines), 'substitute(v:val, "\t", "    ", "g")')
   let nums = range(1, len(lines))
   call vim_md#inline#set_refs(s:collect_refs(lines))
   let out = s:blocks(lines, nums, a:width, {'top': 1, 'item': 0, 'depth': 0})
-  return s:finish(out)
+  return s:finish(out, a:0 ? a:1 : 0)
 endfunction
 
-function! s:finish(out) abort
+function! s:finish(out, margin) abort
   let r = {'lines': [], 'hl': [], 'links': [], 'src': [], 'headings': []}
   let ln = 0
+  let pad = repeat(' ', a:margin)
   for l in a:out
     let ln += 1
-    call add(r.lines, l.t)
+    let off = l.t ==# '' ? 0 : a:margin
+    call add(r.lines, l.t ==# '' ? '' : pad . l.t)
     call add(r.src, get(l, 'src', 1))
     for [col, len, name] in vim_md#hl#flatten(l.sp)
-      call add(r.hl, [ln, col + 1, len, name])
+      call add(r.hl, [ln, col + 1 + off, len, name])
     endfor
     for lk in l.links
-      call add(r.links, [ln, lk[0] + 1, lk[1], lk[2]])
+      call add(r.links, [ln, lk[0] + 1 + off, lk[1], lk[2]])
     endfor
     if has_key(l, 'h')
       call add(r.headings, [ln, l.h[0], l.h[1]])
