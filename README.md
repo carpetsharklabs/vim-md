@@ -39,10 +39,19 @@ or any plugin manager / `:packadd` / a copy in `~/.vim/pack/*/start/vim-md`.
 | `:MdPreviewOpen`    | open it                                |
 | `:MdPreviewClose`   | close it                               |
 | `:MdPreviewRefresh` | force a re-render                      |
+| `:MdView`           | render **in the current window** (toggle) |
+| `:MdViewOpen` / `:MdViewClose` | enter / leave that view      |
 
-Suggested mapping: `nmap <leader>mp <Plug>(vim-md-toggle)`
+`:MdPreview` shows the rendering in a split next to the source. `:MdView`
+replaces the source with the rendering in the *same* window, read-only: the
+cursor line is carried over in both directions, the source buffer stays
+loaded and untouched (even with unsaved changes), and leaving restores your
+window options. Press `q` (or run `:MdView` again) to go back.
 
-Inside the preview window: `q` close · `<CR>`/`gx` follow link under cursor
+Suggested mappings:
+`nmap <leader>mp <Plug>(vim-md-toggle)` and `nmap <leader>mv <Plug>(vim-md-view)`
+
+Inside the preview / view: `q` close · `<CR>`/`gx` follow link under cursor
 (`#anchor` jumps to the heading, `http(s)://` opens externally, relative paths
 open in the source window) · `]]` / `[[` next / previous heading.
 
