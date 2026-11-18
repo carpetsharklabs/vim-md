@@ -12,6 +12,7 @@ let s:view = {}
 
 " Window-local options we override and restore in view mode.
 let s:win_opts = ['wrap', 'number', 'relativenumber', 'list', 'spell', 'foldenable',
+      \ 'foldmethod', 'foldexpr', 'foldtext', 'foldlevel',
       \ 'signcolumn', 'foldcolumn', 'colorcolumn', 'cursorline']
 
 function! s:opt(name, default) abort
@@ -91,8 +92,10 @@ endfunction
 
 " Options for the current window (the render window).
 function! s:setup_win() abort
-  setlocal nowrap nonumber norelativenumber nolist nospell nofoldenable
+  setlocal nowrap nonumber norelativenumber nolist nospell
   setlocal signcolumn=no foldcolumn=0 colorcolumn= cursorline
+  " Sections fold by heading (za, zc, zo, zM, zR); everything starts open.
+  setlocal foldenable foldmethod=expr foldexpr=vim_md#foldexpr(v:lnum) foldtext=vim_md#foldtext() foldlevel=99
 endfunction
 
 function! s:setup_buf(name, ft) abort
@@ -106,6 +109,45 @@ function! s:setup_buf(name, ft) abort
   nnoremap <buffer><silent> gx :<C-u>call vim_md#follow()<CR>
   nnoremap <buffer><silent> ]] :<C-u>call vim_md#heading(1)<CR>
   nnoremap <buffer><silent> [[ :<C-u>call vim_md#heading(-1)<CR>
+  nnoremap <buffer><silent> <Tab> :<C-u>call vim_md#link_jump(1)<CR>
+  nnoremap <buffer><silent> <S-Tab> :<C-u>call vim_md#link_jump(-1)<CR>
+  nnoremap <buffer><silent> gs :<C-u>call vim_md#goto_source()<CR>
+  nnoremap <buffer><silent> <Space> :<C-u>call vim_md#toggle_task()<CR>
+  nnoremap <buffer><silent> x :<C-u>call vim_md#toggle_task()<CR>
+  nnoremap <buffer><silent> gO :<C-u>call vim_md#outline()<CR>
+endfunction
+
+" ---------------------------------------------------------------- folds
+
+function! vim_md#foldexpr(lnum) abort
+  return get(get(s:ctx().res, 'fold', []), a:lnum - 1, '=')
+endfunction
+
+function! vim_md#foldtext() abort
+  return substitute(getline(v:foldstart), '\s\+$', '', '') . '  ⋯ ' . (v:foldend - v:foldstart + 1) . ' lines'
+endfunction
+
+" Headings whose section is closed, as 'level:text' keys (stable across edits).
+function! s:folds_save(win, res) abort
+  let keys = []
+  for h in get(a:res, 'headings', [])
+    call win_execute(a:win, 'let s:fc = foldclosed(' . h[0] . ')')
+    if s:fc == h[0]
+      call add(keys, h[1] . ':' . h[2])
+    endif
+  endfor
+  return keys
+endfunction
+
+function! s:folds_restore(win, res, keys) abort
+  if empty(a:keys)
+    return
+  endif
+  for h in a:res.headings
+    if index(a:keys, h[1] . ':' . h[2]) >= 0
+      call win_execute(a:win, h[0] . 'foldclose')
+    endif
+  endfor
 endfunction
 
 " ---------------------------------------------------------------- preview (split)
@@ -185,8 +227,12 @@ function! s:render_now() abort
   endif
   let s:state.width = winwidth(win)
   let res = s:render_buf(s:state.src, winwidth(win) - 2)
-  call s:fill(s:state.buf, res)
+  let closed = s:folds_save(win, s:state.res)
+  " The new result must be in place before the text: 'foldexpr' reads it while the
+  " buffer is being replaced, and folds are not recomputed afterwards.
   let s:state.res = res
+  call s:fill(s:state.buf, res)
+  call s:folds_restore(win, res, closed)
 endfunction
 
 function! s:stop_timer() abort
@@ -300,16 +346,19 @@ function! s:view_gone() abort
   endif
 endfunction
 
-function! s:view_rerender() abort
-  if !vim_md#view_is_open() || !bufexists(s:view.src) || winwidth(0) == s:view.width
+function! s:view_rerender(force) abort
+  if !vim_md#view_is_open() || !bufexists(s:view.src) || (!a:force && winwidth(0) == s:view.width)
     return
   endif
+  let win = win_getid()
   let sl = get(s:view.res.src, line('.') - 1, 1)
   let res = s:render_buf(s:view.src, winwidth(0) - 2)
+  let closed = s:folds_save(win, s:view.res)
   let s:view.res = res
   let s:view.width = winwidth(0)
   call s:fill(s:view.buf, res)
-  call s:place(win_getid(), res, s:map_idx(res, sl))
+  call s:folds_restore(win, res, closed)
+  call s:place(win, res, s:map_idx(res, sl))
 endfunction
 
 " ---------------------------------------------------------------- autocmds
@@ -361,7 +410,7 @@ function! s:on_resize() abort
   if win > 0 && winwidth(win) != s:state.width
     call s:schedule()
   endif
-  call s:view_rerender()
+  call s:view_rerender(0)
 endfunction
 
 " ---------------------------------------------------------------- navigation
@@ -379,6 +428,121 @@ function! vim_md#heading(dir) abort
   endfor
   if target > 0
     call cursor(target, 1)
+  endif
+endfunction
+
+function! vim_md#link_jump(dir) abort
+  let links = get(s:ctx().res, 'links', [])
+  if empty(links)
+    return
+  endif
+  let ln = line('.')
+  let cl = col('.')
+  let best = -1
+  if a:dir > 0
+    for k in range(len(links))
+      if links[k][0] > ln || (links[k][0] == ln && links[k][1] > cl)
+        let best = k
+        break
+      endif
+    endfor
+    let best = best < 0 ? 0 : best
+  else
+    for k in reverse(range(len(links)))
+      if links[k][0] < ln || (links[k][0] == ln && links[k][1] < cl)
+        let best = k
+        break
+      endif
+    endfor
+    let best = best < 0 ? len(links) - 1 : best
+  endif
+  call cursor(links[best][0], links[best][1])
+endfunction
+
+" Jump from the rendered text to the matching line of the markdown source.
+function! vim_md#goto_source() abort
+  let st = s:ctx()
+  let sl = get(get(st.res, 'src', []), line('.') - 1, 0)
+  if sl < 1
+    return
+  endif
+  if st is s:view
+    call vim_md#view_close()
+  else
+    let w = bufwinid(st.src)
+    if w < 0
+      echo 'vim-md: the source window is not visible'
+      return
+    endif
+    call win_gotoid(w)
+  endif
+  call cursor(sl, 1)
+  normal! zz
+endfunction
+
+" Table of contents in the location list; <CR> jumps to the heading in the source.
+function! vim_md#outline() abort
+  let st = s:ctx()
+  let cur = bufnr('%')
+  if cur == st.buf && !empty(st.res)
+    let src = st.src
+    let res = st.res
+  else
+    let src = cur
+    let res = vim_md#block#render(getbufline(src, 1, '$'), 80)
+  endif
+  if empty(res.headings)
+    echo 'vim-md: no headings'
+    return
+  endif
+  let items = []
+  for h in res.headings
+    call add(items, {'bufnr': src, 'lnum': res.src[h[0] - 1], 'text': repeat('  ', h[1] - 1) . h[2]})
+  endfor
+  " Entries open in the window that owns the list: use the source window, not the
+  " preview, so a jump never replaces the rendered buffer.
+  let w = cur == st.buf ? bufwinid(src) : win_getid()
+  if w < 0
+    let w = win_getid()
+  endif
+  call setloclist(w, [], ' ', {'title': 'Markdown outline', 'items': items})
+  call win_gotoid(w)
+  lopen
+endfunction
+
+" Flip `- [ ]` <-> `- [x]` in the source for the task under the cursor.
+function! vim_md#toggle_task() abort
+  let st = s:ctx()
+  let lnum = line('.')
+  let task = []
+  for t in get(st.res, 'tasks', [])
+    if t[0] == lnum
+      let task = t
+      break
+    endif
+  endfor
+  if empty(task)
+    echo 'vim-md: no task on this line'
+    return
+  endif
+  let src = st.src
+  let sl = st.res.src[lnum - 1]
+  if !bufloaded(src) || !getbufvar(src, '&modifiable')
+    echo 'vim-md: the source buffer cannot be changed'
+    return
+  endif
+  let text = get(getbufline(src, sl), 0, '')
+  let pat = '^\(\%(\s*>\)*\s*\%([-*+]\|\d\{1,9}[.)]\)\s\+\)\[\([ xX]\)\]'
+  let m = matchlist(text, pat)
+  if empty(m) || (m[2] ==# ' ') != (task[1] == 0)
+    echo 'vim-md: the source changed, refresh and try again'
+    return
+  endif
+  call setbufline(src, sl, m[1] . '[' . (m[2] ==# ' ' ? 'x' : ' ') . ']' . strpart(text, strlen(m[0])))
+  if st is s:view
+    call s:view_rerender(1)
+  else
+    call s:render_now()
   endif
 endfunction
 

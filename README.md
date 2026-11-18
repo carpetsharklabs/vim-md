@@ -4,8 +4,9 @@ Rendered markdown preview **inside Vim / Neovim** — no browser, no external
 tools. Pure Vimscript.
 
 `:MdPreview` opens a split with the document already rendered: headings,
-emphasis, lists, task lists, block quotes, GitHub alerts, tables (box
-drawing), syntax-highlighted code blocks, links and images — without the `#`, `**`, `` ` `` noise.
+emphasis, lists, task lists (toggle them from the preview), block quotes, GitHub
+alerts, tables (box drawing), syntax-highlighted code blocks, footnotes,
+`<details>`, emoji shortcodes, links and images — without the `#`, `**`, `` ` `` noise.
 The preview updates while you type and follows your cursor.
 
 ```
@@ -41,6 +42,7 @@ or any plugin manager / `:packadd` / a copy in `~/.vim/pack/*/start/vim-md`.
 | `:MdPreviewRefresh` | force a re-render                      |
 | `:MdView`           | render **in the current window** (toggle) |
 | `:MdViewOpen` / `:MdViewClose` | enter / leave that view      |
+| `:MdOutline`        | table of contents in the location list |
 
 `:MdPreview` shows the rendering in a split next to the source. `:MdView`
 replaces the source with the rendering in the *same* window, read-only: the
@@ -51,9 +53,21 @@ window options. Press `q` (or run `:MdView` again) to go back.
 Suggested mappings:
 `nmap <leader>mp <Plug>(vim-md-toggle)` and `nmap <leader>mv <Plug>(vim-md-view)`
 
-Inside the preview / view: `q` close · `<CR>`/`gx` follow link under cursor
-(`#anchor` jumps to the heading, `http(s)://` opens externally, relative paths
-open in the source window) · `]]` / `[[` next / previous heading.
+Inside the preview / view:
+
+| Key | Action |
+|-----|--------|
+| `q` | close |
+| `<CR>` / `gx` | follow the link under the cursor (`#anchor` jumps to the heading, `http(s)://` opens externally, relative paths open in the source window) |
+| `<Tab>` / `<S-Tab>` | next / previous link |
+| `]]` / `[[` | next / previous heading |
+| `gs` | jump to the matching line of the markdown source |
+| `gO` | outline of the headings (same as `:MdOutline`) |
+| `<Space>` / `x` | toggle the task (`- [ ]` / `- [x]`) on this line **in the source file** |
+| `za` `zc` `zo` `zM` `zR` | fold / unfold sections by heading |
+
+Sections fold by heading level and stay folded across re-renders. Toggling a task
+edits the source buffer (it becomes modified; save it yourself) and re-renders.
 
 ## Options
 
@@ -65,6 +79,7 @@ let g:vim_md_follow = 1           " preview follows the markdown buffer you ente
 let g:vim_md_filetypes = ['markdown']
 let g:vim_md_show_urls = 0        " append (url) after link text
 let g:vim_md_code_syntax = 1      " syntax-highlight fenced code blocks
+let g:vim_md_emoji = 1            " turn :tada: style shortcodes into emoji
 let g:vim_md_open_schemes = ['http', 'https', 'mailto']   " what <CR> may open externally
 let g:vim_md_confirm_external = 0 " 1 = always ask before opening an external link
 let g:vim_md_heading_icons = ['', '', '▌ ', '▸ ', '· ', '· ']
@@ -92,8 +107,7 @@ A previewed document can be untrusted, so following a link is deliberately stric
 
 ## Not supported (yet)
 
-Footnotes, inline HTML beyond a few
-common tags, images as pixels.
+Inline HTML beyond a few common tags, images as pixels, math and diagrams.
 
 ## Development
 
