@@ -6,10 +6,49 @@
 " (later spans override earlier ones when attributes collide).
 
 let s:refs = {}
+let s:fn_labels = {}
+let s:fn_order = []
 
 function! vim_md#inline#set_refs(refs) abort
   let s:refs = a:refs
 endfunction
+
+" Footnote labels defined in the document ({label: 1}); resets the numbering.
+function! vim_md#inline#set_footnotes(labels) abort
+  let s:fn_labels = a:labels
+  let s:fn_order = []
+endfunction
+
+" Labels in the order they were first referenced (this is their number - 1).
+function! vim_md#inline#footnote_order() abort
+  return s:fn_order
+endfunction
+
+let s:sup = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹']
+
+function! vim_md#inline#superscript(n) abort
+  let out = ''
+  for d in split(string(a:n), '\zs')
+    let out .= s:sup[str2nr(d)]
+  endfor
+  return out
+endfunction
+
+let s:emoji = {
+      \ 'tada': '🎉', 'rocket': '🚀', 'warning': '⚠️', 'white_check_mark': '✅', 'heavy_check_mark': '✔️',
+      \ 'x': '❌', 'bulb': '💡', 'memo': '📝', 'fire': '🔥', 'sparkles': '✨', 'bug': '🐛', 'zap': '⚡',
+      \ 'star': '⭐', 'eyes': '👀', 'smile': '😄', 'grin': '😁', 'joy': '😂', 'wink': '😉', 'heart': '❤️',
+      \ 'thinking': '🤔', 'cry': '😢', 'sob': '😭', 'sunglasses': '😎', 'blush': '😊', 'slightly_smiling_face': '🙂',
+      \ '+1': '👍', '-1': '👎', 'thumbsup': '👍', 'thumbsdown': '👎', 'clap': '👏', 'pray': '🙏', 'muscle': '💪',
+      \ 'wave': '👋', 'ok_hand': '👌', 'point_right': '👉', 'point_left': '👈', 'raised_hands': '🙌',
+      \ 'book': '📖', 'books': '📚', 'bookmark': '🔖', 'link': '🔗', 'lock': '🔒', 'key': '🔑', 'mag': '🔍',
+      \ 'gear': '⚙️', 'wrench': '🔧', 'hammer': '🔨', 'package': '📦', 'computer': '💻', 'keyboard': '⌨️',
+      \ 'bell': '🔔', 'bomb': '💣', 'boom': '💥', 'construction': '🚧', 'no_entry': '⛔', 'stop_sign': '🛑',
+      \ 'question': '❓', 'exclamation': '❗', 'information_source': 'ℹ️', 'recycle': '♻️', 'trophy': '🏆',
+      \ 'art': '🎨', 'chart_with_upwards_trend': '📈', 'hourglass': '⌛', 'calendar': '📅',
+      \ 'earth_africa': '🌍', 'sunny': '☀️', 'cloud': '☁️', 'snowflake': '❄️', 'coffee': '☕', 'pizza': '🍕',
+      \ 'beer': '🍺', 'brazil': '🇧🇷',
+      \ }
 
 function! vim_md#inline#parse(text) abort
   return s:parse(a:text)
@@ -235,6 +274,18 @@ function! s:parse(text) abort
       endif
 
     elseif c ==# '['
+      let fm = matchstr(a:text, '^\[\^[^\]]\+\]', i)
+      if fm !=# '' && has_key(s:fn_labels, strpart(fm, 2, strlen(fm) - 3))
+        let label = strpart(fm, 2, strlen(fm) - 3)
+        let idx = index(s:fn_order, label)
+        if idx < 0
+          call add(s:fn_order, label)
+          let idx = len(s:fn_order) - 1
+        endif
+        call s:lit(res, vim_md#inline#superscript(idx + 1), ['VimMdFootnote'])
+        let i += strlen(fm)
+        continue
+      endif
       let lk = s:match_link(a:text, i)
       if !empty(lk)
         let inner = s:parse(lk.label)
@@ -279,6 +330,15 @@ function! s:parse(text) abort
       endif
       let m = matchstr(a:text, s:strip_tags, i)
       if m !=# ''
+        let i += strlen(m)
+        continue
+      endif
+
+    elseif c ==# ':' && get(g:, 'vim_md_emoji', 1)
+      let m = matchstr(a:text, '^:[a-z0-9_+-]\+:', i)
+      let e = m ==# '' ? '' : get(s:emoji, strpart(m, 1, strlen(m) - 2), '')
+      if e !=# ''
+        let res.t .= e
         let i += strlen(m)
         continue
       endif

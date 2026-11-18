@@ -6,11 +6,15 @@
 "   'links':    [[lnum, col, len, url], ...],
 "   'src':      [source lnum for every rendered line],
 "   'headings': [[lnum, level, text], ...],
+"   'tasks':    [[lnum, checked], ...],           " rendered lines that start a task item
+"   'fold':     ['>1', '=', ...],                  " per line 'foldexpr' value (headings start folds)
 " }
 
 let s:fence_re = '^\s\{0,3}\(`\{3,}\|\~\{3,}\)'
 let s:hr_re = '^\s\{0,3}\([-*_]\)\%(\s*\1\)\{2,}\s*$'
 let s:atx_re = '^\s\{0,3}\(#\{1,6}\)\%(\s\+\(.*\)\)\=$'
+
+let s:fn_defs = {}
 
 let s:alerts = {
       \ 'NOTE': ['VimMdNote', '● '],
@@ -25,13 +29,17 @@ let s:alerts = {
 function! vim_md#block#render(lines, width, ...) abort
   let lines = map(copy(a:lines), 'substitute(v:val, "\t", "    ", "g")')
   let nums = range(1, len(lines))
-  call vim_md#inline#set_refs(s:collect_refs(lines))
+  let [refs, fns] = s:prepass(lines)
+  call vim_md#inline#set_refs(refs)
+  call vim_md#inline#set_footnotes(fns)
+  let s:fn_defs = {}
   let out = s:blocks(lines, nums, a:width, {'top': 1, 'item': 0, 'depth': 0})
+  call extend(out, s:footnote_section(a:width, out))
   return s:finish(out, a:0 ? a:1 : 0)
 endfunction
 
 function! s:finish(out, margin) abort
-  let r = {'lines': [], 'hl': [], 'links': [], 'src': [], 'headings': []}
+  let r = {'lines': [], 'hl': [], 'links': [], 'src': [], 'headings': [], 'tasks': [], 'fold': []}
   let ln = 0
   let pad = repeat(' ', a:margin)
   for l in a:out
@@ -48,12 +56,19 @@ function! s:finish(out, margin) abort
     if has_key(l, 'h')
       call add(r.headings, [ln, l.h[0], l.h[1]])
     endif
+    if has_key(l, 'task')
+      call add(r.tasks, [ln, l.task])
+    endif
+    call add(r.fold, has_key(l, 'h') ? '>' . l.h[0] : '=')
   endfor
   return r
 endfunction
 
-function! s:collect_refs(lines) abort
+" One pass over the document (outside code fences): link reference definitions
+" and footnote labels.
+function! s:prepass(lines) abort
   let refs = {}
+  let fns = {}
   let in_fence = ''
   for l in a:lines
     let f = matchstr(l, s:fence_re)
@@ -66,14 +81,51 @@ function! s:collect_refs(lines) abort
       endif
       continue
     endif
-    if in_fence ==# ''
-      let m = matchlist(l, '^\s\{0,3}\[\([^\]]\+\)\]:\s*<\=\(\S\+\)')
-      if !empty(m)
-        let refs[tolower(m[1])] = substitute(m[2], '>$', '', '')
-      endif
+    if in_fence !=# ''
+      continue
+    endif
+    let fm = matchlist(l, '^\s\{0,3}\[\^\([^\]]\+\)\]:')
+    if !empty(fm)
+      let fns[fm[1]] = 1
+      continue
+    endif
+    let m = matchlist(l, '^\s\{0,3}\[\([^\]]\+\)\]:\s*<\=\(\S\+\)')
+    if !empty(m)
+      let refs[tolower(m[1])] = substitute(m[2], '>$', '', '')
     endif
   endfor
-  return refs
+  return [refs, fns]
+endfunction
+
+" Footnotes referenced in the text, numbered by first reference, after a short rule.
+function! s:footnote_section(width, main) abort
+  let out = []
+  let k = 0
+  while k < len(vim_md#inline#footnote_order())
+    let def = get(s:fn_defs, vim_md#inline#footnote_order()[k], {})
+    if !empty(def)
+      let mark = vim_md#inline#superscript(k + 1) . ' '
+      let mw = strdisplaywidth(mark)
+      let inner = s:blocks(def.lines, def.nums, a:width - mw, {'top': 0, 'item': 1, 'depth': 0})
+      if empty(inner)
+        let inner = [s:line('', [])]
+        let inner[0].src = def.nums[0]
+      endif
+      call s:prefix(inner, mark, repeat(' ', mw), 'VimMdFootnote', '')
+      call extend(out, inner)
+    endif
+    let k += 1
+  endwhile
+  if empty(out)
+    return []
+  endif
+  let src = empty(a:main) ? out[0].src : get(a:main[-1], 'src', 1)
+  let w = min([a:width, 12])
+  let blank = s:line('', [])
+  let blank.src = src
+  let rule = s:line(repeat('─', w), [[0, 3 * w, 'VimMdRule']])
+  let rule.src = src
+  return [blank, rule] + out
 endfunction
 
 " ---------------------------------------------------------------- helpers
@@ -167,6 +219,8 @@ function! s:starts_block(line) abort
         \ || a:line =~# s:atx_re
         \ || a:line =~# '^\s\{0,3}>'
         \ || a:line =~# '^\s*<!--'
+        \ || a:line =~? '^\s*</\=\%(details\|summary\)\>'
+        \ || a:line =~# '^\s\{0,3}\[\^[^\]]\+\]:'
         \ || s:is_hr(a:line)
         \ || !empty(s:item_start(a:line))
 endfunction
@@ -453,6 +507,9 @@ function! s:render_list(lines, nums, i, width, ctx) abort
       let inner = [s:line('', [])]
       let inner[0].src = it.nums[0]
     endif
+    if !empty(task)
+      let inner[0].task = task[1] ==# ' ' ? 0 : 1
+    endif
     call s:prefix(inner, marker . ' ', repeat(' ', mw + 1), mgroup, '')
     call extend(out, inner)
     let idx += 1
@@ -590,6 +647,53 @@ function! s:blocks(lines, nums, width, ctx) abort
       endwhile
       let i = j + 1
 
+    elseif kind ==# '' && a:ctx.top && line =~# '^\s\{0,3}\[\^[^\]]\+\]:'
+      let m = matchlist(line, '^\s\{0,3}\[\^\([^\]]\+\)\]:\s*\(.*\)$')
+      let dl = [m[2]]
+      let dn = [a:nums[i]]
+      let j = i + 1
+      let last = i
+      let pend = []
+      while j < n
+        let l = a:lines[j]
+        if l =~# '^\s*$'
+          call add(pend, j)
+          let j += 1
+          continue
+        endif
+        let ind = strlen(matchstr(l, '^\s*'))
+        if ind >= 2
+          for p in pend
+            call add(dl, '')
+            call add(dn, a:nums[p])
+          endfor
+          let pend = []
+          call add(dl, strpart(l, min([ind, 4])))
+          call add(dn, a:nums[j])
+        elseif empty(pend) && !s:starts_block(l) && l !~# '^\s\{0,3}\[\^[^\]]\+\]:'
+          call add(dl, substitute(l, '^\s*', '', ''))
+          call add(dn, a:nums[j])
+        else
+          break
+        endif
+        let last = j
+        let j += 1
+      endwhile
+      let s:fn_defs[m[1]] = {'lines': dl, 'nums': dn}
+      let kind = 'fn'
+      let i = last + 1
+
+    elseif kind ==# '' && line =~? '^\s*<summary[^>]*>.*</summary>\s*$'
+      let t = substitute(line, '\c^\s*<summary[^>]*>\(.*\)</summary>\s*$', '\1', '')
+      let wl = s:wrap(vim_md#inline#parse(t), width - 2)
+      for l in wl
+        call insert(l.sp, [0, strlen(l.t), 'VimMdBold'], 0)
+      endfor
+      call s:prefix(wl, '▾ ', '  ', 'VimMdBullet', '')
+      let blk = wl
+      let kind = 'p'
+      let i += 1
+
     elseif kind ==# '' && line =~# '^\s\{0,3}\[[^\]]\+\]:\s*\S'
       let i += 1
 
@@ -662,7 +766,7 @@ function! s:blocks(lines, nums, width, ctx) abort
           let blk[k].src = s:lerp(sn, en, k, len(blk))
         endif
       endfor
-      if !empty(out) && !(a:ctx.item && prev ==# 'p' && kind ==# 'list')
+      if !empty(out) && !(a:ctx.item && prev ==# 'p' && (kind ==# 'list' || kind ==# 'quote'))
         let sep = s:line('', [])
         let sep.src = blk[0].src
         call add(out, sep)

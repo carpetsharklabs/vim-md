@@ -18,6 +18,7 @@ let s:links = {
       \ 'VimMdLink': 'Underlined',
       \ 'VimMdUrl': 'Comment',
       \ 'VimMdImage': 'Special',
+      \ 'VimMdFootnote': 'Special',
       \ 'VimMdQuote': 'Comment',
       \ 'VimMdBullet': 'Special',
       \ 'VimMdCheck': 'Special',
