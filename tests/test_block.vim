@@ -169,3 +169,40 @@ function! Test_code_syntax_never_uses_normal_group() abort
   let r = s:r(['```vimmdtest', 'def plain def', '```'], 30)
   call assert_equal([], filter(copy(r.hl), 'v:val[3] =~# "Normal"'))
 endfunction
+
+function! Test_footnotes() abort
+  let r = s:r(['Text[^a] and more[^b] again[^a].', '', '[^b]: Second def', '[^a]: First def', '  continued', '[^unused]: nobody'], 40)
+  call assert_equal(['Text¹ and more² again¹.', '', repeat('─', 12), '¹ First def continued', '² Second def'], r.lines)
+endfunction
+
+function! Test_footnote_definition_interrupts_paragraph() abort
+  let r = s:r(['See[^1]', '[^1]: the note'], 40)
+  call assert_equal(['See¹', '', repeat('─', 12), '¹ the note'], r.lines)
+endfunction
+
+function! Test_footnote_wrapped_and_in_code_is_ignored() abort
+  let r = s:r(['x[^1]', '', '[^1]: aaa bbb ccc ddd', '', '```', '[^2]: not a footnote', '```'], 12)
+  call assert_equal(['', repeat('─', 12), '¹ aaa bbb', '  ccc ddd'], r.lines[-4 :])
+  call assert_true(len(filter(copy(r.lines), 'v:val =~# "\\[^2\\]: not a footnote"')) == 1, 'code block content is kept verbatim')
+endfunction
+
+function! Test_details_summary() abort
+  let r = s:r(['<details>', '<summary>More <b>info</b></summary>', '', 'hidden text', '</details>'], 30)
+  call assert_equal(['▾ More info', '', 'hidden text'], r.lines)
+endfunction
+
+function! Test_tasks_and_fold_metadata() abort
+  let r = s:r(['# T', '', '- [ ] a', '- [x] b', '  - [ ] c', '', 'plain'], 20)
+  call assert_equal(['T', repeat('═', 20), '', '☐ a', '☑ b', '  ☐ c', '', 'plain'], r.lines)
+  call assert_equal([[4, 0], [5, 1], [6, 0]], r.tasks)
+  call assert_equal([3, 4, 5], [r.src[3], r.src[4], r.src[5]], 'tasks map back to their source lines')
+  call assert_equal('>1', r.fold[0])
+  call assert_equal(len(r.lines), len(r.fold))
+  let r = s:r(['# A', '', '## B', 'x', '# C'], 20)
+  call assert_equal(['>1', '=', '=', '>2', '=', '=', '=', '=', '>1', '='], r.fold)
+endfunction
+
+function! Test_quote_in_list_and_list_in_quote() abort
+  let r = s:r(['> - a', '>   > deep', '', '- x', '  > q'], 30)
+  call assert_equal(['▎ • a', '▎   ▎ deep', '', '• x', '  ▎ q'], r.lines)
+endfunction

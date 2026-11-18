@@ -14,14 +14,24 @@ COMMANDS                                                         *vim-md-command
 :MdViewOpen           Enter the view.
 :MdViewClose          Leave the view.
 
+:MdOutline            Table of contents in the location list of the source
+                      window; <CR> on an entry jumps to the heading.
+
 <Plug>(vim-md-toggle) Mapping for :MdPreview.
 <Plug>(vim-md-view)   Mapping for :MdView.
+<Plug>(vim-md-outline) Mapping for :MdOutline.
 
 PREVIEW WINDOW MAPPINGS                                          *vim-md-mappings*
 
 q            close the preview
 <CR>, gx     follow the link under the cursor
 ]] / [[      next / previous heading
+<Tab> / <S-Tab>  next / previous link
+gs           jump to the matching line in the markdown source
+gO           outline (:MdOutline)
+<Space>, x   toggle the task on this line in the source ("- [ ]" <-> "- [x]");
+             the source buffer is modified, not saved
+za zc zo zM zR  fold / unfold sections by heading (they stay closed on re-render)
 
 OPTIONS                                                           *vim-md-options*
 
@@ -30,9 +40,14 @@ g:vim_md_size          columns (or lines); 0 = half of the current window
 g:vim_md_debounce      milliseconds to wait before re-rendering (120)
 g:vim_md_follow        follow the markdown buffer you enter (1)
 g:vim_md_filetypes     filetypes treated as markdown (['markdown'])
+g:vim_md_emoji         turn :shortcode: into emoji (1)
 g:vim_md_show_urls     show "(url)" after link text (0)
 g:vim_md_code_syntax   highlight fenced code blocks with Vim's syntax files (1);
                        needs |:syntax| on, skipped for unknown languages
+g:vim_md_open_schemes  URL schemes <CR> may open with the system opener
+                       (['http', 'https', 'mailto']); everything else is refused
+g:vim_md_confirm_external ask before opening any external link (0). Links whose
+                       text is a URL for a different host always ask.
 g:vim_md_heading_icons list of 6 prefixes, one per heading level
 
 HIGHLIGHT GROUPS                                                *vim-md-highlight*
@@ -40,7 +55,7 @@ HIGHLIGHT GROUPS                                                *vim-md-highligh
 VimMdH1..VimMdH6 VimMdBold VimMdItalic VimMdStrike VimMdCode VimMdCodeBlock
 VimMdCodeLang VimMdLink VimMdUrl VimMdImage VimMdQuote VimMdBullet VimMdCheck
 VimMdChecked VimMdRule VimMdTableBorder VimMdNote VimMdTip VimMdImportant
-VimMdWarning VimMdCaution
+VimMdWarning VimMdCaution VimMdFootnote
 
 All are defined with ":highlight default", so your own definitions win.
 
